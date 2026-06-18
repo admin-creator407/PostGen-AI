@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Bakend api
-const API_URL = (import.meta as any).env.VITE_API_URL || 'https://postgen-ai.onrender.com';
+const API_URL = (import.meta as any).env.VITE_API_URL || 'https://postgen-ai.onrender.com/api';
 
 const api = axios.create({
   baseURL: API_URL,
