@@ -16,22 +16,12 @@ app.use(
     origin: [
       "http://localhost",
       "http://localhost:5173",
-      "https://postgen-ai-linkedin-post-generator.vercel.app",
+      "https://postgen-ai-linkedin-post-generator1.vercel.app",
     ],
     credentials: true,
-    methods: [
-      "GET",
-      "POST",
-      "PUT",
-      "PATCH",
-      "DELETE",
-      "OPTIONS",
-    ],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-    ],
-  })
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
 );
 
 app.options("*", cors());
