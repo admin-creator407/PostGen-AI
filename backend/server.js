@@ -20,6 +20,7 @@ app.use(
       "https://postgen-ai-linkedin-post-generator.vercel.app/",
       "https://postgen-ai-linkedin-post-generator-chxtiwlon.vercel.app/",
       "https://postgen-ai-linkedin-post-ge-git-1dea55-admin-creator-s-projects.vercel.app/",
+      "https://postgen-ai.onrender.com",
     ],
     credentials: true,
     methods: ["Content-Type", "Authorization"],
