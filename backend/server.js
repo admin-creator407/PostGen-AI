@@ -11,21 +11,22 @@ connectDB();
 
 app.use(morgan("dev"));
 
-app.use(
-  cors({
-    origin: [
-      "http://localhost",
-      "http://localhost:5173",
-      "https://postgen-ai-linkedin-post-generator1.vercel.app",
-    ],
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  }),
-);
+// app.use(
+//   cors({
+//     origin: [
+//       "http://localhost",
+//       "http://localhost:5173",
+//       "https://postgen-ai-linkedin-post-generator1-gdepbqozl.vercel.app",
+//     ],
+//     credentials: true,
+//     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+//     allowedHeaders: ["Content-Type", "Authorization"],
+//   }),
+// );
 
-app.options("*", cors());
+// app.options("*", cors());
 app.use(express.json({ limit: "50kb" })); //setting limit
+app.use(cors());
 
 //API Routes
 app.use("/api/auth", require("./src/routes/auth"));
