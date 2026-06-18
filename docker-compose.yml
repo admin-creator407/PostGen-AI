@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:alpine
+    container_name: postgen_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
+  backend:
+    build: ./backend
+    container_name: postgen_backend
+    restart: unless-stopped
+    env_file: 
+      - ./backend/.env
+    ports:
+      - "5000:5000"
+    depends_on:
+      - redis
+
+  frontend:
+    build: ./frontend
+    container_name: postgen_frontend
+    restart: unless-stopped
+    environment:
+      - VITE_API_URL=/api
+    depends_on:
+      - backend
+
+  nginx:
+    image: nginx:alpine
+    container_name: postgen_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend
+      - backend
+
+volumes:
+  redis_data:
