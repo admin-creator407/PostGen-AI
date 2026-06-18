@@ -16,22 +16,25 @@ app.use(
     origin: [
       "http://localhost",
       "http://localhost:5173",
-      "http://127.0.0.1:5173",
-
       "https://postgen-ai-linkedin-post-generator.vercel.app",
-      "https://postgen-ai-linkedin-post-generator-chxtiwlon.vercel.app",
-      "https://postgen-ai-linkedin-post-ge-git-1dea55-admin-creator-s-projects.vercel.app",
-
-      "https://postgen-ai.onrender.com",
     ],
-
     credentials: true,
-
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-
-    allowedHeaders: ["Content-Type", "Authorization"],
-  }),
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS",
+    ],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+    ],
+  })
 );
+
+app.options("*", cors());
 app.use(express.json({ limit: "50kb" })); //setting limit
 
 //API Routes
