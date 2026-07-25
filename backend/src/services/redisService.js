@@ -6,7 +6,7 @@ const redisClient = require('../config/redis');
  * @returns {Promise<any|null>}
  */
 const getCache = async (key) => {
-  if (!redisClient) return null;
+  if (!redisClient || redisClient.status !== 'ready') return null;
   try {
     const data = await redisClient.get(key);
     return data ? JSON.parse(data) : null;
@@ -23,7 +23,7 @@ const getCache = async (key) => {
  * @param {number} ttlInSeconds - default 3600 (1 hour)
  */
 const setCache = async (key, value, ttlInSeconds = 3600) => {
-  if (!redisClient) return;
+  if (!redisClient || redisClient.status !== 'ready') return;
   try {
     const stringData = JSON.stringify(value);
     await redisClient.setex(key, ttlInSeconds, stringData);
@@ -32,7 +32,21 @@ const setCache = async (key, value, ttlInSeconds = 3600) => {
   }
 };
 
+/**
+ * Delete cached data from Redis.
+ * @param {string} key
+ */
+const deleteCache = async (key) => {
+  if (!redisClient || redisClient.status !== 'ready') return;
+  try {
+    await redisClient.del(key);
+  } catch (error) {
+    console.error('Redis delete error:', error.message);
+  }
+};
+
 module.exports = {
   getCache,
   setCache,
+  deleteCache,
 };

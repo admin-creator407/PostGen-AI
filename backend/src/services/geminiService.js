@@ -1,128 +1,119 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 require("dotenv").config();
 
-if (!process.env.GEMINI_API_KEY) {
-  console.warn("GEMINI_API_KEY environment variable is not defined.");
-}
+if (!process.env.GEMINI_API_KEY) console.warn("GEMINI_API_KEY environment variable is not defined.");
 
 const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 45000);
+const MAX_ATTEMPTS = 3;
+const inFlightRequests = new Map();
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const generatePostContent = async (topic, tone, length) => {
-  const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
+const isRetryable = (error) => {
+  const status = error?.status || error?.response?.status;
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504 || !status;
+};
 
-  let lengthPrompt = "";
-  if (length === "short") {
-    lengthPrompt =
-      "Keep it under 100 words. Straight to the point, impactful, brief.";
-  } else if (length === "medium") {
-    lengthPrompt =
-      "Between 100 to 200 words. Balanced depth, readable paragraphs, easy to scan.";
-  } else {
-    lengthPrompt =
-      "Between 200 to 350 words. Deep dive, storytelling details, substantial content.";
+const withTimeout = (promise) => new Promise((resolve, reject) => {
+  const timer = setTimeout(() => {
+    const error = new Error("The AI service took too long to respond. Please try again.");
+    error.status = 504;
+    reject(error);
+  }, REQUEST_TIMEOUT_MS);
+  promise.then(resolve, reject).finally(() => clearTimeout(timer));
+});
+
+async function requestContent(prompt, minimumWords) {
+  if (!process.env.GEMINI_API_KEY) {
+    const error = new Error("AI generation is not configured. Add GEMINI_API_KEY to the backend environment.");
+    error.status = 503;
+    throw error;
   }
 
-  let tonePrompt = "";
-  if (tone === "professional") {
-    tonePrompt =
-      "Use an authoritative, industry-expert tone. Emphasize business value, clarity, and professionalism.";
-  } else if (tone === "casual") {
-    tonePrompt =
-      "Use a friendly, conversational, approachable, and authentic tone. Like talking to a peer.";
-  } else if (tone === "storytelling") {
-    tonePrompt =
-      "Start with a narrative hook, share a struggle or challenge, pivot to a turning point, and share the key lesson learned. Highly relatable and engaging.";
-  } else if (tone === "thought-leadership") {
-    tonePrompt =
-      "Contrarian or insightful perspective. Challenge the status quo, offer unique observations, and write with inspiring credibility.";
+  const model = ai.getGenerativeModel({ model: MODEL_NAME });
+  let lastError;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const result = await withTimeout(model.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        // Do not cap maxOutputTokens here. Gemini 2.5 Flash uses part of that
+        // budget internally, and low caps can leave only a fragment for users.
+        generationConfig: { temperature: 0.7 },
+      }));
+      const content = result.response.text().trim();
+      if (!content) throw new Error("The AI service returned an empty response.");
+      if (content.split(/\s+/).length < minimumWords) {
+        throw new Error("The AI service returned incomplete content.");
+      }
+      return content;
+    } catch (error) {
+      lastError = error;
+      if (attempt === MAX_ATTEMPTS || !isRetryable(error)) break;
+      await sleep(300 * (2 ** (attempt - 1)));
+    }
   }
+  const error = new Error(lastError?.message === "The AI service returned incomplete content."
+    ? "The AI returned incomplete content. Please try again."
+    : isRetryable(lastError)
+    ? "The AI service is temporarily busy. Please try again in a moment."
+    : "Unable to generate content. Please check your request and try again.");
+  error.status = lastError?.status || lastError?.response?.status || 502;
+  throw error;
+}
 
-  const prompt = `
-    You are a professional social media strategist and world-class LinkedIn writer.
-    Generate a compelling LinkedIn post about the following topic:
-    Topic: "${topic}"
-    Tone of post: ${tonePrompt}
-    Length of post: ${lengthPrompt}
-    
-    Structure requirements:
-    1. A strong opening hook (first 1-2 lines) that commands attention and stops the feed-scroll.
-    2. High-value insights, actionable points, or a compelling story formatted with clear line breaks. Use short paragraphs (1-3 sentences maximum) to keep readability high.
-    3. Use subtle bullet points or numbered lists where appropriate for scanning.
-    4. A clear, natural Call to Action (CTA) at the end, inviting reader comments or thoughts (e.g. asking a question).
-    5. Place 3 to 5 highly relevant hashtags at the very bottom, separated by spaces.
-    
-    Important Constraints:
-    - Never include generic placeholder text like "[Your Name]" or "[Your Company]". Make the post complete and ready-to-publish.
-    - Keep formatting clean, avoiding excessive emojis. Only use emojis where they add visual structure.
-    - Provide ONLY the post content. No introductory greetings or meta-text.
-  `;
-
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-  });
-
-  return result.response.text().trim();
+const generateOnce = (key, prompt, minimumWords) => {
+  if (!inFlightRequests.has(key)) {
+    const request = requestContent(prompt, minimumWords).finally(() => inFlightRequests.delete(key));
+    inFlightRequests.set(key, request);
+  }
+  return inFlightRequests.get(key);
 };
 
-//  Rewrites ur existing post into new linkedin post
-
-const rewritePostContent = async (originalPost) => {
-  const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
-
-  const prompt = `
-    You are an expert LinkedIn copywriter. Rewrite the following LinkedIn draft to make it far more engaging, professional, and readable while preserving its core message and value.
-    
-    Original Draft:
-    "${originalPost}"
-    
-    Ensure the rewritten version:
-    1. Has a significantly stronger, scroll-stopping hook.
-    2. Restructures long paragraphs into readable, short blocks (1-3 sentences).
-    3. Adds structure using bullet points or spacing if it improves clarity.
-    4. Includes an engaging Call to Action (CTA) at the end.
-    5. Concludes with 3 to 5 highly relevant hashtags.
-    
-    Return ONLY the rewritten post. No introduction or notes.
-  `;
-
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-  });
-
-  return result.response.text().trim();
+const lengthInstructions = {
+  short: { text: "60-100 words.", minimumWords: 45 },
+  medium: { text: "120-200 words.", minimumWords: 90 },
+  long: { text: "220-350 words.", minimumWords: 160 },
+};
+const toneInstructions = {
+  professional: "Authoritative, clear, business-focused.",
+  casual: "Friendly, conversational, authentic.",
+  storytelling: "Narrative hook, challenge, turning point, lesson.",
+  "thought-leadership": "Insightful perspective that challenges conventional thinking.",
 };
 
-//Generates a slide-by-slide LinkedIn Carousel.
+// Providers occasionally return a perfectly valid response as one long line.
+// Preserve their wording, but give that response the readable LinkedIn layout
+// the UI and copied post expect.
+const ensureReadableLayout = (content) => {
+  if (content.includes('\n')) return content;
 
-const generateCarouselContent = async (topic) => {
-  const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
+  const hashtagMatch = content.match(/\s+(#[\w]+(?:\s+#[\w]+)*)\s*$/);
+  const hashtags = hashtagMatch ? hashtagMatch[1] : '';
+  const body = hashtagMatch ? content.slice(0, hashtagMatch.index).trim() : content;
+  const sentences = body.split(/(?<=[.!?])\s+/).filter(Boolean);
 
-  const prompt = `
-    You are an expert social media creator. Generate content for a 5-slide educational LinkedIn PDF Carousel about the following topic:
-    Topic: "${topic}"
-    
-    Format the response as a clear slide-by-slide structure.
-    
-    Output requirements:
-    Slide 1: Hook (Title & Subtitle - high attention grabber)
-    Slide 2: Problem (The pain point or challenge the audience faces)
-    Slide 3: Solution (The core concept, framework, or answer)
-    Slide 4: Example (A real-world application, checklist, or 3 actionable bullet points)
-    Slide 5: CTA (Call to action - save, share, comment)
-    
-    Write content for each slide clearly. Keep it concise since slides have limited space.
-    Return ONLY the text for the slides. Label each section as "Slide 1: [Title]" followed by its content.
-  `;
+  if (sentences.length < 3) return content;
 
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-  });
-
-  return result.response.text().trim();
+  const paragraphs = [sentences.slice(0, 1).join(' ')];
+  for (let index = 1; index < sentences.length; index += 2) {
+    paragraphs.push(sentences.slice(index, index + 2).join(' '));
+  }
+  return [...paragraphs, ...(hashtags ? [hashtags] : [])].join('\n\n');
 };
 
-module.exports = {
-  generatePostContent,
-  rewritePostContent,
-  generateCarouselContent,
+const generatePostContent = (topic, tone, length) => {
+  const settings = lengthInstructions[length];
+  const prompt = `Write a ready-to-publish LinkedIn post about: ${topic}\nTone: ${toneInstructions[tone]}\nLength: ${settings.text}\nRequired layout: write a one-line hook, then at least 3 separate short paragraphs or bullet sections, then a one-line CTA, then 3-5 hashtags on their own final line. Separate every section with a blank line. Use useful, specific insight. Return only the post; no preamble or placeholders.`;
+  return generateOnce(`post:${topic}:${tone}:${length}`, prompt, settings.minimumWords).then(ensureReadableLayout);
 };
+const rewritePostContent = (originalPost) => {
+  const prompt = `Rewrite this LinkedIn draft for clarity and engagement while preserving its meaning:\n${originalPost}\nUse a stronger hook, at least 3 short paragraphs or bullet sections separated by blank lines, a CTA, and 3-5 relevant hashtags on a final separate line. Return only the rewritten post.`;
+  return generateOnce(`rewrite:${originalPost}`, prompt, 90).then(ensureReadableLayout);
+};
+const generateCarouselContent = (topic) => {
+  const prompt = `Create concise content for a 5-slide educational LinkedIn carousel about: ${topic}\nFormat exactly as Slide 1 through Slide 5. Cover: hook, problem, solution, example/actionable points, and CTA. Return only slide content.`;
+  return generateOnce(`carousel:${topic}`, prompt, 80);
+};
+
+module.exports = { generatePostContent, rewritePostContent, generateCarouselContent };

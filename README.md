@@ -179,6 +179,14 @@ GEMINI_API_KEY=your_gemini_api_key
 REDIS_URL=redis://redis:6379
 ```
 
+For MongoDB Atlas, add your current IP address to Atlas **Network Access** and
+confirm the database user/password in `MONGO_URI`. Without a working MongoDB
+connection, login and registration cannot access user accounts.
+
+`redis` is the Docker Compose service hostname. When running the backend directly
+with `npm run dev`, either run Redis locally and use `REDIS_URL=redis://127.0.0.1:6379`,
+or remove `REDIS_URL`; caching and rate limiting will be safely disabled.
+
 Create a `.env` file inside the frontend directory.
 
 ```env

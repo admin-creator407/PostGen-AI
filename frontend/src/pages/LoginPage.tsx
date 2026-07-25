@@ -42,7 +42,7 @@ const LoginPage: React.FC = () => {
       addToast('Welcome back!', 'success');
       setTimeout(() => navigate('/'), 900);
     } catch (err: any) {
-      addToast(err.response?.data?.message || 'Login failed. Check your credentials.', 'error');
+      addToast(err.response?.data?.message || err.message || 'Login failed. Check your credentials.', 'error');
     } finally {
       setIsLoading(false);
     }

@@ -33,7 +33,7 @@ const CarouselPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['posts'] });
     },
     onError: (err: any) =>
-      addToast(err.response?.data?.message || 'Generation failed.', 'error'),
+      addToast(err.response?.data?.message || err.message || 'Generation failed.', 'error'),
   });
 
   const toggleFavoriteMutation = useMutation({

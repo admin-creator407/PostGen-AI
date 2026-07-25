@@ -1,4 +1,6 @@
 const Post = require('../models/Post');
+const mongoose = require('mongoose');
+const crypto = require('crypto');
 const geminiService = require('../services/geminiService');
 const redisService = require('../services/redisService');
 
@@ -9,6 +11,12 @@ const extractHashtags = (text) => {
   return matches ? matches.map((tag) => tag.replace('#', '').toLowerCase()) : [];
 };
 
+const cacheKeyFor = (userId, topic, tone, length) => {
+  const normalizedTopic = topic.trim().replace(/\s+/g, ' ').toLowerCase();
+  const hash = crypto.createHash('sha256').update(normalizedTopic).digest('hex');
+  return `post:v3:${userId}:${hash}:${tone}:${length}`;
+};
+
 // @desc    Generate a LinkedIn post
 // @route   POST /api/posts/generate
 // @access  Private
@@ -17,12 +25,17 @@ const generatePost = async (req, res, next) => {
     const { topic, tone, length } = req.body;
     const userId = req.user.id;
 
-    if (!topic || !tone || !length) {
+    if (typeof topic !== 'string' || !topic.trim() || !tone || !length) {
       return res.status(400).json({ message: 'Topic, tone, and length are required fields.' });
+    }
+    if (topic.length > 300) return res.status(400).json({ message: 'Topic cannot exceed 300 characters.' });
+    if (!['professional', 'casual', 'storytelling', 'thought-leadership'].includes(tone)
+      || !['short', 'medium', 'long'].includes(length)) {
+      return res.status(400).json({ message: 'Invalid tone or length selection.' });
     }
 
     // Try to get from Cache first
-    const cacheKey = `post:${userId}:${Buffer.from(topic).toString('base64').substring(0, 40)}:${tone}:${length}`;
+    const cacheKey = cacheKeyFor(userId, topic, tone, length);
     const cachedResponse = await redisService.getCache(cacheKey);
 
     if (cachedResponse) {
@@ -48,6 +61,9 @@ const generatePost = async (req, res, next) => {
     // Save to Cache (TTL 1 hour)
     await redisService.setCache(cacheKey, post, 3600);
 
+    // Invalidate stats cache
+    await redisService.deleteCache(`user:stats:${userId}`);
+
     res.status(201).json(post);
   } catch (error) {
     next(error);
@@ -59,9 +75,10 @@ const rewritePost = async (req, res, next) => {
     const { originalPost } = req.body;
     const userId = req.user.id;
 
-    if (!originalPost) {
+    if (typeof originalPost !== 'string' || !originalPost.trim()) {
       return res.status(400).json({ message: 'Original post content is required.' });
     }
+    if (originalPost.length > 10000) return res.status(400).json({ message: 'Draft cannot exceed 10,000 characters.' });
 
     const rewrittenContent = await geminiService.rewritePostContent(originalPost);
     const hashtags = extractHashtags(rewrittenContent);
@@ -77,6 +94,9 @@ const rewritePost = async (req, res, next) => {
       promptUsed: 'Rewrite draft',
     });
 
+    // Invalidate stats cache
+    await redisService.deleteCache(`user:stats:${userId}`);
+
     res.status(201).json(post);
   } catch (error) {
     next(error);
@@ -91,9 +111,10 @@ const generateCarousel = async (req, res, next) => {
     const { topic } = req.body;
     const userId = req.user.id;
 
-    if (!topic) {
+    if (typeof topic !== 'string' || !topic.trim()) {
       return res.status(400).json({ message: 'Topic is required.' });
     }
+    if (topic.length > 300) return res.status(400).json({ message: 'Topic cannot exceed 300 characters.' });
 
     const carouselContent = await geminiService.generateCarouselContent(topic);
 
@@ -107,6 +128,9 @@ const generateCarousel = async (req, res, next) => {
       hashtags: [],
       promptUsed: 'Generate PDF Carousel',
     });
+
+    // Invalidate stats cache
+    await redisService.deleteCache(`user:stats:${userId}`);
 
     res.status(201).json(post);
   } catch (error) {
@@ -127,6 +151,9 @@ const toggleFavorite = async (req, res, next) => {
 
     post.isFavorite = !post.isFavorite;
     await post.save();
+
+    // Invalidate stats cache
+    await redisService.deleteCache(`user:stats:${req.user.id}`);
 
     res.status(200).json(post);
   } catch (error) {
@@ -158,7 +185,7 @@ const getPosts = async (req, res, next) => {
     }
 
     // Return latest posts first
-    const posts = await Post.find(query).sort({ createdAt: -1 });
+    const posts = await Post.find(query).sort({ createdAt: -1 }).limit(100).lean();
     res.status(200).json(posts);
   } catch (error) {
     next(error);
@@ -176,6 +203,9 @@ const deletePost = async (req, res, next) => {
       return res.status(404).json({ message: 'Post not found or unauthorized' });
     }
 
+    // Invalidate stats cache
+    await redisService.deleteCache(`user:stats:${req.user.id}`);
+
     res.status(200).json({ message: 'Post deleted successfully', id: req.params.id });
   } catch (error) {
     next(error);
@@ -187,38 +217,48 @@ const deletePost = async (req, res, next) => {
 // @access  Private
 const getStats = async (req, res, next) => {
   try {
-    const userId = new mongoose.Types.ObjectId(req.user.id);
+    const userId = req.user.id;
+    const cacheKey = `user:stats:${userId}`;
 
-    // Total post count
-    const totalPosts = await Post.countDocuments({ userId });
+    // Try to get cached stats first
+    const cachedStats = await redisService.getCache(cacheKey);
+    if (cachedStats) {
+      return res.status(200).json(cachedStats);
+    }
 
-    // Favorite posts count
-    const favoritePosts = await Post.countDocuments({ userId, isFavorite: true });
-
-    // Posts created in the last 7 days
+    const userObjectId = new mongoose.Types.ObjectId(userId);
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-    const postsThisWeek = await Post.countDocuments({
-      userId,
-      createdAt: { $gte: oneWeekAgo },
-    });
 
-    // Most used tone
-    const toneAggregation = await Post.aggregate([
-      { $match: { userId } },
-      { $group: { _id: '$tone', count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
-      { $limit: 1 },
+    // Run database queries in parallel
+    const [totalPosts, favoritePosts, postsThisWeek, toneAggregation] = await Promise.all([
+      Post.countDocuments({ userId: userObjectId }),
+      Post.countDocuments({ userId: userObjectId, isFavorite: true }),
+      Post.countDocuments({
+        userId: userObjectId,
+        createdAt: { $gte: oneWeekAgo },
+      }),
+      Post.aggregate([
+        { $match: { userId: userObjectId } },
+        { $group: { _id: '$tone', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 1 },
+      ]),
     ]);
 
     const mostUsedTone = toneAggregation.length > 0 ? toneAggregation[0]._id : 'None yet';
 
-    res.status(200).json({
+    const stats = {
       totalPosts,
       favoritePosts,
       postsThisWeek,
       mostUsedTone,
-    });
+    };
+
+    // Cache stats for 1 hour (3600 seconds)
+    await redisService.setCache(cacheKey, stats, 3600);
+
+    res.status(200).json(stats);
   } catch (error) {
     next(error);
   }

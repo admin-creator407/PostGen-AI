@@ -16,6 +16,7 @@ const rateLimiter = require('../middleware/rateLimiter');
 router.use(auth);
 
 router.get('/', getPosts);
+router.get('/stats', getStats);
 
 router.post('/generate', rateLimiter, generatePost);
 

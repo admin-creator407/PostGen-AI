@@ -2,7 +2,7 @@ const redisClient = require("../config/redis");
 
 // Custom redis rate limiter limits 10 req per minute
 const rateLimiter = async (req, res, next) => {
-  if (!redisClient) {
+  if (!redisClient || redisClient.status !== 'ready') {
     // If Redis is not running or not configured, bypass rate limiting.
     return next();
   }
@@ -20,7 +20,7 @@ const rateLimiter = async (req, res, next) => {
     if (current > 10) {
       return res.status(429).json({
         message:
-          "Too many requests. You are allowed a maximum of 10 generations per minute. Please try again later.",
+          "Too many requests. Please try again later.",
       });
     }
 

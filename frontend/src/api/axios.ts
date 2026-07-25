@@ -1,10 +1,13 @@
 import axios from 'axios';
 
 // Bakend api
-const API_URL = (import.meta as any).env.VITE_API_URL || 'https://postgen-ai.onrender.com/api';
+// Use the same-origin API by default. Vite proxies this to the local backend in
+// development and Nginx proxies it in Docker/production.
+const API_URL = (import.meta as any).env.VITE_API_URL || '/api';
 
 const api = axios.create({
   baseURL: API_URL,
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -35,6 +38,11 @@ api.interceptors.response.use(
       if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
         window.location.href = '/login';
       }
+    }
+    if (error.code === 'ECONNABORTED') {
+      error.message = 'The request timed out. Please try again.';
+    } else if (!error.response) {
+      error.message = 'Unable to reach the server. Check your connection and try again.';
     }
     return Promise.reject(error);
   }

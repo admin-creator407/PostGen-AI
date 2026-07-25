@@ -32,7 +32,7 @@ const RewritePage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['posts'] });
     },
     onError: (err: any) =>
-      addToast(err.response?.data?.message || 'Rewrite failed.', 'error'),
+      addToast(err.response?.data?.message || err.message || 'Rewrite failed.', 'error'),
   });
 
   const toggleFavoriteMutation = useMutation({

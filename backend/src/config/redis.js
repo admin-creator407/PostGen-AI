@@ -4,11 +4,12 @@ let redisClient = null;
 
 if (process.env.REDIS_URL) {
   redisClient = new Redis(process.env.REDIS_URL, {
-    maxRetriesPerRequest: 3,
-    retryStrategy(times) {
-      const delay = Math.min(times * 50, 2000);
-      return delay;
-    },
+    // Redis is an optional performance layer. Never make user requests wait
+    // for an unavailable Redis server (especially during local development).
+    connectTimeout: 2000,
+    enableOfflineQueue: false,
+    maxRetriesPerRequest: 1,
+    retryStrategy: () => null,
   });
 
   redisClient.on("connect", () => {
@@ -16,7 +17,11 @@ if (process.env.REDIS_URL) {
   });
 
   redisClient.on("error", (err) => {
-    console.error(" Redis connection error:", err.message);
+    console.warn(`Redis unavailable; caching and rate limiting are disabled (${err.message}).`);
+  });
+
+  redisClient.on("end", () => {
+    console.warn("Redis connection closed; continuing without cache and rate limiting.");
   });
 } else {
   console.log(
