@@ -3,7 +3,7 @@ import axios from 'axios';
 // Bakend api
 // Use the same-origin API by default. Vite proxies this to the local backend in
 // development and Nginx proxies it in Docker/production.
-const API_URL = (import.meta as any).env.VITE_API_URL || '/api';
+// const API_URL = (import.meta as any).env.VITE_API_URL || '/api';
 
 const api = axios.create({
   baseURL: 'https://postgen-ai.onrender.com/api',
