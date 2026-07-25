@@ -12,28 +12,30 @@ connectDB();
 
 app.use(morgan("dev"));
 
-// app.use(
-//   cors({
-//     origin: [
-//       "http://localhost",
-//       "http://localhost:5173",
-//       "https://postgen-ai-linkedin-post-generator1-gdepbqozl.vercel.app",
-//     ],
-//     credentials: true,
-//     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-//     allowedHeaders: ["Content-Type", "Authorization"],
-//   }),
-// );
+app.use(
+  cors({
+    origin: [
+      "http://localhost",
+      "http://localhost:5173",
+      "https://post-gen-ai-beta.vercel.app/",
+    ],
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
+);
 
 // app.options("*", cors());
 app.use(express.json({ limit: "50kb" })); //setting limit
-app.use(cors());
+// app.use(cors());
 
 app.get("/api/health", (req, res) => {
   const databaseConnected = mongoose.connection.readyState === 1;
   res.status(databaseConnected ? 200 : 503).json({
     status: databaseConnected ? "ok" : "degraded",
-    message: databaseConnected ? "Server and database are running!" : "Server is running but MongoDB is unavailable.",
+    message: databaseConnected
+      ? "Server and database are running!"
+      : "Server is running but MongoDB is unavailable.",
   });
 });
 
@@ -44,7 +46,8 @@ const rateLimiter = require("./src/middleware/rateLimiter");
 app.use("/api", (req, res, next) => {
   if (mongoose.connection.readyState !== 1) {
     return res.status(503).json({
-      message: "Database is unavailable. Check the MongoDB connection and try again.",
+      message:
+        "Database is unavailable. Check the MongoDB connection and try again.",
     });
   }
   next();

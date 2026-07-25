@@ -8,7 +8,7 @@ export default defineConfig({
     host: true, // Needed for docker container port exposure
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:5000',
+        target: 'https://postgen-ai.onrender.com',
         changeOrigin: true,
       },
     },
