@@ -57,8 +57,8 @@ app.use("/api", (req, res, next) => {
 app.use("/api", rateLimiter);
 
 //API Routes
-app.use("/auth", require("./src/routes/auth"));
-app.use("/posts", require("./src/routes/posts"));
+app.use("/api/auth", require("./src/routes/auth"));
+app.use("/api/posts", require("./src/routes/posts"));
 
 app.use((req, res) => {
   res.status(404).json({ message: `Route ${req.originalUrl} not found` });
